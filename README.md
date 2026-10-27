@@ -9,11 +9,13 @@ A [Claude skill](https://docs.claude.com/en/docs/claude-code/skills) for buildin
 | `skills/busybar/SKILL.md` | Overview, architecture choice (on-device app vs HTTP client), non-negotiable rules, smoke test |
 | `references/http-api.md` | Base URLs and auth, endpoint table, draw/clear payloads, priorities, endpoints a JS app may call |
 | `references/drawing.md` | Element types and required fields, measured font metrics, busy-lib layout engine, XPM bitmaps, diff-drawing |
-| `references/animation.md` | Firmware-side motion, `.anim` assets and sections, timer-driven frames, transitions |
+| `references/animation.md` | Firmware-side motion, `.anim` assets, the `.anim` format and generating files, timer-driven frames, count-ups, transitions |
 | `references/js-apps.md` | App lifecycle, input, manifest, settings schema, busy-cli toolchain, resource limits, release checklist |
 | `references/pitfalls.md` | Common mistakes and what actually fixes them |
 | `templates/main.ts` | Minimal on-device app: poll, diff-draw, back off, quit cleanly |
 | `templates/icons.py` | Dependency-free generator for the app's 8×8 / 11×11 RGBA PNG icons |
+| `templates/make_anim.py` | Dependency-free `.anim` ("bicycle1") writer for firmware-played animations |
+| `templates/screenshot.py` | Captures the front screen as an LED-style PNG or animated PNG |
 
 ## Install
 

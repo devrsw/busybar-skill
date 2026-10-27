@@ -24,10 +24,12 @@ The BUSY Bar is a desk status device. What matters for code:
 Both use the same draw payload and the same layout helpers. Read:
 
 - [references/drawing.md](references/drawing.md) — element types, fonts with measured pixel metrics, coordinates, the busy-lib `row/column/stack` layout engine, XPM bitmaps, diff-drawing.
-- [references/animation.md](references/animation.md) — `.anim` elements and sections, timer-driven frame animation, scrolling text, countdowns, LED blink.
+- [references/animation.md](references/animation.md) — `.anim` elements, the `.anim` file format and how to generate files, timer-driven frames, number count-ups, scrolling text, countdowns, LED blink.
 - [references/pitfalls.md](references/pitfalls.md) — **read before debugging.** Common BUSY Bar mistakes and what actually fixes them.
 - [templates/main.ts](templates/main.ts) — a correct minimal on-device app (poll + diff-draw + clean quit).
 - [templates/icons.py](templates/icons.py) — dependency-free generator for the 8×8 front / 11×11 back app icons from pixel grids.
+- [templates/make_anim.py](templates/make_anim.py) — dependency-free `.anim` writer: generate smooth firmware-played animations from code.
+- [templates/screenshot.py](templates/screenshot.py) — capture the bar's front screen as an LED-style PNG or animated PNG.
 
 ## Non-negotiables (learned the hard way)
 

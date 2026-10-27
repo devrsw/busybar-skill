@@ -98,9 +98,20 @@ Mistakes that come up again and again when building for the BUSY Bar. Each entry
 **Using a plain 1 s `setInterval` for a seconds display** → it isn't aligned to the second boundary and drifts, so displayed seconds can lag, skip or repeat.
 → Schedule each tick with `setTimeout` to the next second boundary (+~30 ms).
 
+## Animation
+
+**"There's no way to make `.anim` files, so animate with timers"** → choppy motion capped at ~3 fps and a draw request per frame.
+→ The format is documented in the firmware repo (`lib/anim_file/anim_file_format.h`), the firmware ships `scripts/seq2anim.py` for PNG sequences, and `templates/make_anim.py` generates them from code. Native `.anim` plays at 20 fps with no app requests.
+
+**Animated element in the wrong color** → `.anim` colors are baked into the file.
+→ One file per color option; restrict the color setting to that palette and fall back to a static bitmap.
+
+**Animated element offset from where the static version sat** → the `.anim` canvas was padded for travel room.
+→ Lay out at the unpadded size and shift the element by `-pad` with `dx`/`dy`.
+
 ## Process
 
 - Verify against the real device early (`curl /api/version`, one test draw) before writing large amounts of code or docs around an assumption.
 - Don't write pages of speculative troubleshooting docs; one correct, tested request beats them.
-- `GET /api/screen?display=0` lets you check what's actually on the front screen without looking at the device.
+- `GET /api/screen?display=0` lets you check what's actually on the front screen without looking at the device (base64 BGR). `templates/screenshot.py` renders it as an LED-style PNG, or records an animated PNG — good for READMEs and for verifying animations.
 - The apps API (`/apps/*`) is USB/LAN only and needs firmware 1.3.1+. The API doesn't tell you which app is running.

@@ -30,7 +30,7 @@ Source of truth: the device's own docs at `http://<bar>/docs`, the public refere
 | `/status/ws` | WS | live state stream (input events, frames, power, wifi…). busy-lib's `LocalStateStream` decodes the protobuf stream (browser only). From non-browser clients you can connect, send `{"enable": true}`, and read JSON messages (e.g. button events). |
 | `/display/draw` | POST, DELETE | draw elements / clear (see below) |
 | `/display/brightness` | GET, POST | POST `?value=auto` or `?value=0..100` |
-| `/screen` | GET | `?display=0` (front) / `1` (back): current frame. Default pixel format is BGR; busy-lib `ScreenFrameGet(..., {dataType:'binary', format:'rgba'})` converts |
+| `/screen` | GET | `?display=0` (front) / `1` (back): current frame as **base64 text**; the front decodes to 72×16 pixels × 3 bytes **BGR**. busy-lib `ScreenFrameGet(..., {dataType:'binary', format:'rgba'})` converts. Poll it to record what's on screen — `templates/screenshot.py` turns captures into LED-style PNG / animated PNG |
 | `/audio/play` | POST, DELETE | POST JSON `{application_name, path}` or `{application_name, stock_path}`; DELETE stops |
 | `/audio/volume` | GET, POST | POST `?volume=0..100` (5 % steps; optional `&silent=1`) |
 | `/assets/upload` | POST, DELETE | POST `?application_name=X&file=name.png`, raw body `application/octet-stream`. DELETE `?application_name=X` removes the app's assets |

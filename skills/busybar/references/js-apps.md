@@ -59,7 +59,7 @@ Other formats (`.jpg`, `.gif`, `.svg`, `.wav`, `.mp3`) go to `resources/` with a
 }
 ```
 
-- `id`: ≤ 32 chars, `[A-Za-z0-9_.-]`, not starting with `.`; reverse-DNS style. Replace the template's `app.example`.
+- `id`: ≤ 32 chars, `[A-Za-z0-9_.-]`, not starting with `.`. Replace the template's `app.example`. Choose it once: **changing the id makes the bar treat it as a different app** — settings must be re-entered and the old install lingers until uninstalled. Reverse-DNS (`com.yourdomain.app`) avoids collisions; a generic `app.<name>` keeps personal names out of packages and release assets. Same goes for `author` (optional) if the app will be shared publicly.
 - `api_version`: minimum API needed; firmware refuses apps newer than itself. Keep it as low as works.
 - `heap_size_kib`: 1–512, default 128. The **whole** heap — it holds your script *and* every response you parse. Running out of heap doesn't just throw: on firmware 1.3.1 it **rebooted the whole bar**. Rough guide: a small app (≲ 20 KB built `main.js`, small responses) is fine at 128; a ~50 KB script parsing multi-KB JSON responses needed **256**. Check `dist/` script size after building, and raise the heap before shipping if you're near that range, rather than waiting for a crash.
 - `debug: true` hides the app unless developer mode is on.
@@ -153,6 +153,10 @@ async function request(method: string, url: string, body?: unknown): Promise<unk
   catch { throw Object.assign(new Error("not JSON"), { kind: "network" }); }
 }
 ```
+
+### Primary and fallback data sources
+
+When two services can supply the same data, don't make the user pick one in settings. Use the primary when it's configured, and fall back to the secondary when the primary isn't set up, errors, rejects the login (then leave the primary alone for a while, e.g. 10 min), returns no data, or returns stale data. Optional extras (fields only one service has) come from whichever service is configured.
 
 ### Rate-limited APIs
 
