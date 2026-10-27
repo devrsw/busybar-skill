@@ -82,6 +82,18 @@ Firmware-rendered live timer — no redraws needed.
 ```
 `timestamp` is Unix seconds **as a string**. `direction`: `time_left` / `time_since`. `show_hours`: `when_non_zero` / `always`.
 
+### Custom ticking clock (when `countdown` isn't enough)
+
+Need your own format, font, colors, or a paused/frozen state? Draw the clock yourself, but cheaply:
+
+- **One text element per character, each centered in a fixed-width cell** (cell = widest digit from `textWidth("0".."9", font)`; colon gets its own width; add the font's inter-glyph gap `textWidth("00") - 2*textWidth("0")`). A narrow `1` then doesn't shift its neighbours, and text beside the clock only moves when a digit is added (`9:59` → `10:00`).
+- **Number the ids from the right** (`d0` = last seconds digit). When a digit is added on the left, the seconds keep their ids, so diff-drawing still resends only what changed — usually just 1–2 tiny elements per second.
+- **Tick on the second boundary**, not with `setInterval(1000)` which drifts: `setTimeout(tick, 1000 - ((Date.now() - startMs) % 1000) + 30)` and reschedule after each draw. Run it only while the clock is running.
+
+### Negative `y` to align caps
+
+Text `y` is the line-box top, so caps start a row or two below it (cap top in the font table). Negative `y` is fine: `bold` at `y: -1` puts its caps on rows 1–7, leaving rows 9–15 for a `small` line at `y: 7`. Use this to pack a bold line over a small line.
+
 ### `animation`
 See [animation.md](animation.md).
 
@@ -212,6 +224,9 @@ Also guard against overlapping draws: if a draw is in flight, set a `redrawPendi
 - Color carries meaning (range/status); keep it consistent and configurable.
 - Show staleness: grey the value when data is old, replace with `---` when very old.
 - Use short status messages for error states (`No connection`, `Bad login`, `Set API key`) — the user has no other UI.
+- **Use the back screen for details.** The front gets the one glanceable fact; the 160×80 greyscale back can hold description, project, totals, the last error, and a control cheat-sheet (`OK refresh  BACK quit`). Set `display: "back"` on those elements (or `render(tree, { display: "back", width: 160, height: 80 })`). Keep back-screen text within ~145 px: the firmware draws status icons along the right edge. Make it a setting (some users never look at the back).
+- **Small status markers** — a 1–2 px dot in a corner (e.g. amber = changes waiting to sync, red = sync failing) says a lot without stealing space; explain it on the back screen.
+- **Transient feedback**: after a button action, flash a short word (`Started`, `Paused`) for ~1.5 s via a timer, plus a one-off `led_notification_color` (green/amber/red), then return to the normal frame.
 - Symbols (arrows, weather icons, progress) → `xpmbitmap`, not text.
 - Progress indicators — two recipes:
   - **Bar** (2 px along the bottom): a translucent track plus a fill on top. Skip the fill element when its width rounds to 0 (and clear it if it was shown).

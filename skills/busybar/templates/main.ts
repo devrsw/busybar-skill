@@ -22,7 +22,9 @@ interface Data {
 
 async function fetchData(url: string): Promise<Data> {
   const response = await fetch(url, { headers: { Accept: "application/json" } });
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  // The device runtime may report the status as a string.
+  const status = Number(response.status);
+  if (status < 200 || status > 299) throw new Error(`HTTP ${status}`);
   let raw: unknown;
   try {
     raw = JSON.parse(await response.text());

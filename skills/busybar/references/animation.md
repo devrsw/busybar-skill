@@ -71,6 +71,25 @@ Rules:
 - Stop the interval when the animation isn't needed (stale data, error message, app quitting) — a running interval also keeps a JS app alive.
 - Make motion optional via a settings boolean (e.g. `animate`) — some people find it distracting on a desk.
 
+### Composite sprites: animate only the moving part
+
+Split a scene into a static bitmap plus small moving parts, each its own element. Example — a 14×16 3D-printer icon:
+
+```ts
+const FRAME = generateXpm2({ palette: { "#": "#8C8C8C", "=": "#787878", _: "#B4B4B4", ".": "none" }, grid: [/* frame, rail, bed */] });
+const HEAD  = generateXpm2({ palette: { H: "#E6E6E6", N: "#FF7A00", ".": "none" }, grid: ["HHHHH", "HHHHH", ".HHH.", "..N.."] });
+const HEAD_X = [1, 2, 4, 6, 8, 8, 6, 4, 2, 1];          // sweep positions, one per 500 ms step
+
+[
+  { id: "frame", type: "xpmbitmap", data: FRAME, x: 2, y: 0 },                       // sent once
+  { id: "head",  type: "xpmbitmap", data: HEAD,  x: 2 + HEAD_X[step], y: 2, z_index: 2 }, // resent per step
+  { id: "part",  type: "rectangle", x: 6, y: 13 - h, width: 6, height: h,             // grows with progress
+    fill: "solid", fill_colors: [color], border_width: 0, z_index: 1 },
+]
+```
+
+Each step resends only the ~30-byte `head` element; the part grows only when progress changes. Park the moving part (fixed position, no timer) when the thing it represents is idle, failed or finished.
+
 Ideas that read well at 72×16: 1-px "nudge" of a trend arrow in its direction, a progress bar filling, a sprite sliding along a road (`x` from a computed progress), blinking a colon via alternating color (cheaper than add/remove).
 
 ## 4. Transitions between states

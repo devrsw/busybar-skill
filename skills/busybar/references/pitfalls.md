@@ -80,6 +80,24 @@ Mistakes that come up again and again when building for the BUSY Bar. Each entry
 **Calling `/assets/upload` or `/input` from an app** → blocked.
 → Apps can reach only the whitelisted local endpoints; ship assets inside the package.
 
+**The bar reboots while the app runs** (default 128 KiB heap, ~50 KB script parsing JSON responses).
+→ JS out-of-memory took down the whole device on firmware 1.3.1. Set `heap_size_kib: 256` for larger apps; parse only what you need.
+
+**`if (response.status === 200)` never true** → the device runtime can report `status` as a string.
+→ `Number(response.status)`.
+
+**The server receives the text `undefined` as the request body** (and may reject the request) → `body: undefined` was in the fetch init.
+→ Omit the `body` key unless there is a body.
+
+**Error handling branches never match** (`err instanceof AuthError` is false for an `AuthError`).
+→ `instanceof` on Error subclasses is unreliable in JerryScript; use a `kind` field.
+
+**Trying to use MQTT/WebSockets from an app** → no client in the runtime.
+→ HTTP `fetch` only; poll REST endpoints and estimate in between.
+
+**Using a plain 1 s `setInterval` for a seconds display** → it isn't aligned to the second boundary and drifts, so displayed seconds can lag, skip or repeat.
+→ Schedule each tick with `setTimeout` to the next second boundary (+~30 ms).
+
 ## Process
 
 - Verify against the real device early (`curl /api/version`, one test draw) before writing large amounts of code or docs around an assumption.

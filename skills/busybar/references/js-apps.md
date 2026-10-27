@@ -61,7 +61,7 @@ Other formats (`.jpg`, `.gif`, `.svg`, `.wav`, `.mp3`) go to `resources/` with a
 
 - `id`: ≤ 32 chars, `[A-Za-z0-9_.-]`, not starting with `.`; reverse-DNS style. Replace the template's `app.example`.
 - `api_version`: minimum API needed; firmware refuses apps newer than itself. Keep it as low as works.
-- `heap_size_kib`: 1–512, default 128. The **whole** heap. Raise only on "out of memory".
+- `heap_size_kib`: 1–512, default 128. The **whole** heap — it holds your script *and* every response you parse. Running out of heap doesn't just throw: on firmware 1.3.1 it **rebooted the whole bar**. Rough guide: a small app (≲ 20 KB built `main.js`, small responses) is fine at 128; a ~50 KB script parsing multi-KB JSON responses needed **256**. Check `dist/` script size after building, and raise the heap before shipping if you're near that range, rather than waiting for a crash.
 - `debug: true` hides the app unless developer mode is on.
 
 ## App icons
@@ -73,7 +73,7 @@ Without icons the APPS menu shows a generic "unknown app" icon — ship both:
 | `src/appmeta/icon_front_8x8.png` | 8×8 | color, shaded pixel art |
 | `src/appmeta/icon_back_11x11.png` | 11×11 | greyscale line art (back OLED) |
 
-Save as 8-bit RGBA PNG with transparent background, matching the look of the built-in Clock/Weather icons. One recognizable silhouette; at 8×8 there's no room for detail or text. A tiny script (e.g. Python + Pillow, or a hand-written pixel grid) is fine for producing them.
+Save as 8-bit RGBA PNG with transparent background, matching the look of the built-in Clock/Weather icons. One recognizable silhouette; at 8×8 there's no room for detail or text. Generate them from pixel grids with [templates/icons.py](../templates/icons.py) (dependency-free Python; copy to `scripts/icons.py`, edit the grids, run `python3 scripts/icons.py` from the app root) so they stay reproducible and reviewable.
 
 ## Lifecycle — the most important thing to get right
 
@@ -106,6 +106,8 @@ const unbind = listen("input", (event) => {
 
 - Buttons: `ok`, `start`, `back` with `press | release | short | long | repeat`. Encoder: `action` `clockwise | counterclockwise`, `delta` ±1.
 - **Use `short` for taps, not `press`.** `press` fires on key-down and is followed by `short`, so handling `press` double-fires and reacts before the gesture is complete. `long`/`repeat` for holds; `press`/`release` only for games.
+- A useful control scheme: **START** = primary toggle (start/pause), **hold START** (`long`) = the stronger variant (stop / start new), **OK** = refresh now, **knob** = browse a list (`list()` from busy-lib) with OK/START to choose and BACK to cancel, **BACK** = quit (or cancel when a picker is open). Close a picker automatically after ~15 s without input.
+- Make button actions **feel instant**: update the screen immediately, then do the network call (see "Optimistic actions" below).
 
 ## Runtime APIs
 
@@ -117,6 +119,54 @@ Not available: `fs`, `path`, `process`, `document`, `window`, Node built-ins, DO
 - Only a whitelist of local endpoints is reachable (see http-api.md → "Endpoints a JS app may call"): draw/clear, brightness, audio play/volume, busy snapshot, own settings, read-only status.
 - Remote `fetch` to the internet works when Wi-Fi is connected. Parse `response.text()` then `JSON.parse` in a try/catch — a captive portal or wrong URL returns HTML.
 - `localStorage.setItem` rewrites the whole store to flash: small values, rare writes.
+- **HTTP only.** There's no MQTT, raw TCP or WebSocket client in the app runtime. If a service publishes live data only over MQTT/WebSocket, poll its REST API (and estimate between polls, e.g. progress from start time + expected duration, capped at 99 % until the service reports completion).
+- **Local time:** don't trust `Date`'s local-time methods for the bar's timezone. Read the bar's offset from `device.TimeGet()` (its `timestamp` ends in `±HH:MM`), keep `utcOffsetS`, and compute local midnight etc. as `Math.floor((nowS + off) / 86400) * 86400 - off`. Refresh it occasionally.
+
+### Runtime quirks (JerryScript `fetch` and errors)
+
+Workarounds that are needed on firmware 1.3.x:
+
+- **`response.status` may be a string.** Always `const status = Number(response.status)` before comparing.
+- **Don't pass `body: undefined`.** The device `fetch` sends it as the literal text `"undefined"`. Build `init` and add the `body` key only when there is a body.
+- **`instanceof` on `Error` subclasses is unreliable.** Give your errors a `kind` field (`"auth" | "network" | "quota" | "http"`) and branch on that (duck typing), not on `err instanceof AuthError`.
+- **Error pages:** summarize non-JSON error bodies (HTML `<title>`, or JSON `error_description`) into a few words for logs/back screen; never log the whole body.
+
+```ts
+async function request(method: string, url: string, body?: unknown): Promise<unknown> {
+  const init: RequestInit = { method, headers: { Accept: "application/json", Authorization: auth } };
+  if (body !== undefined) {                       // no body key at all otherwise
+    (init.headers as Record<string, string>)["Content-Type"] = "application/json";
+    init.body = JSON.stringify(body);
+  }
+  let response: Response;
+  try { response = await fetch(url, init); }
+  catch (err) { throw Object.assign(new Error(String(err)), { kind: "network" }); }
+  const status = Number(response.status);        // may arrive as a string
+  const text = await response.text();
+  if (status === 401 || status === 403) throw Object.assign(new Error(`HTTP ${status}`), { kind: "auth" });
+  if (status === 429 || status === 402) {
+    const wait = Number(response.headers.get("Retry-After"));
+    throw Object.assign(new Error(`HTTP ${status}`), { kind: "quota", retryAfterS: isFinite(wait) ? wait : 0 });
+  }
+  if (status < 200 || status > 299) throw Object.assign(new Error(`HTTP ${status}`), { kind: status >= 500 ? "network" : "http" });
+  try { return text ? JSON.parse(text) : null; }
+  catch { throw Object.assign(new Error("not JSON"), { kind: "network" }); }
+}
+```
+
+### Rate-limited APIs
+
+Many services cap calls per hour (some free tiers ~30/h). Budget them: default refresh every few minutes (~12/h), one request per refresh, cache rarely-changing lookups (names, colors) in `localStorage`, and leave headroom for button presses. On 429/quota responses honor `Retry-After` (or the service's reset header), show `Rate limited`, and wait — don't back off blindly from 30 s.
+
+### Optimistic actions with a persistent sync queue
+
+For apps that *control* a remote service (start/stop a timer, toggle something):
+
+1. On the press, change local state and redraw **immediately**, stamped with the press time.
+2. Append the operation (with that timestamp) to a queue persisted in `localStorage`, then sync in the background, so the service records the true time even if the sync happens later.
+3. Retry the queue with backoff; keep it across app restarts.
+4. While the queue isn't empty, **don't let polling overwrite local state**. If the service refuses an op, drop it and poll once the queue is empty to resync.
+5. Show a small corner dot while ops are pending (amber) or failing (red); explain on the back screen.
 
 ## Settings
 

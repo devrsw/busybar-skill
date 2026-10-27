@@ -13,6 +13,7 @@ A [Claude skill](https://docs.claude.com/en/docs/claude-code/skills) for buildin
 | `references/js-apps.md` | App lifecycle, input, manifest, settings schema, busy-cli toolchain, resource limits, release checklist |
 | `references/pitfalls.md` | Common mistakes and what actually fixes them |
 | `templates/main.ts` | Minimal on-device app: poll, diff-draw, back off, quit cleanly |
+| `templates/icons.py` | Dependency-free generator for the app's 8×8 / 11×11 RGBA PNG icons |
 
 ## Install
 

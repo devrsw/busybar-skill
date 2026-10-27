@@ -27,6 +27,7 @@ Both use the same draw payload and the same layout helpers. Read:
 - [references/animation.md](references/animation.md) — `.anim` elements and sections, timer-driven frame animation, scrolling text, countdowns, LED blink.
 - [references/pitfalls.md](references/pitfalls.md) — **read before debugging.** Common BUSY Bar mistakes and what actually fixes them.
 - [templates/main.ts](templates/main.ts) — a correct minimal on-device app (poll + diff-draw + clean quit).
+- [templates/icons.py](templates/icons.py) — dependency-free generator for the 8×8 front / 11×11 back app icons from pixel grids.
 
 ## Non-negotiables (learned the hard way)
 
@@ -37,8 +38,9 @@ Both use the same draw payload and the same layout helpers. Read:
 5. **Elements persist by `id` per `application_name`.** Redrawing does not erase old ids. Send only changed elements; remove vanished ids with `DELETE /display/draw` + `element_ids`. There is no `clear_before_draw` field.
 6. **Fonts are ASCII bitmap fonts.** No `→`, `°`, emoji. Draw symbols as `xpmbitmap` elements. In apps, write every font as a literal `font: "..."` in source — busy-cli bundles metrics only for those, and `textWidth()`/`render()` throw for any other.
 7. **Priority 1–100, default 50.** Built-in apps are 10, an active BUSY/CUSTOM work session is 90. Use 50 unless the user wants to interrupt a focus session (91+), and never use 100 by habit.
-8. **The bar is a small embedded device.** Poll on human time scales, keep one draw request in flight, back off on errors, redraw only when something visible changes.
-9. **Never modify BUSY Bar firmware.** If a capability is missing, degrade gracefully or report the required API version.
+8. **The bar is a small embedded device.** Poll on human time scales, keep one draw request in flight, back off on errors, redraw only when something visible changes. A JS app that runs out of heap can **reboot the whole bar** — size `heap_size_kib` for your script plus the responses you parse (256 for larger apps).
+9. **The app runtime is JerryScript, with quirks:** `Number(response.status)` (it may be a string), never pass `body: undefined` to `fetch`, and don't rely on `instanceof` for Error subclasses — see js-apps.md.
+10. **Never modify BUSY Bar firmware.** If a capability is missing, degrade gracefully or report the required API version.
 
 ## Quick smoke test (USB)
 
