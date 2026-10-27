@@ -35,7 +35,7 @@ Both use the same draw payload and the same layout helpers. Read:
 3. **Rectangles fill with `fill: "solid"` + `fill_colors: ["#RRGGBBAA"]`.** There is no `color` on rectangles; the default is `fill: "none"` with a 1 px white border. Set `border_width: 0` for a plain block.
 4. **16 pixels is tiny.** One `extra_large`/`large` line, or two `small`/`tiny` lines. Text `y` is the top of the font's line box, which includes blank rows — measure, don't guess (see font table in drawing.md).
 5. **Elements persist by `id` per `application_name`.** Redrawing does not erase old ids. Send only changed elements; remove vanished ids with `DELETE /display/draw` + `element_ids`. There is no `clear_before_draw` field.
-6. **Fonts are ASCII bitmap fonts.** No `→`, `°`, emoji. Draw symbols as `xpmbitmap` elements.
+6. **Fonts are ASCII bitmap fonts.** No `→`, `°`, emoji. Draw symbols as `xpmbitmap` elements. In apps, write every font as a literal `font: "..."` in source — busy-cli bundles metrics only for those, and `textWidth()`/`render()` throw for any other.
 7. **Priority 1–100, default 50.** Built-in apps are 10, an active BUSY/CUSTOM work session is 90. Use 50 unless the user wants to interrupt a focus session (91+), and never use 100 by habit.
 8. **The bar is a small embedded device.** Poll on human time scales, keep one draw request in flight, back off on errors, redraw only when something visible changes.
 9. **Never modify BUSY Bar firmware.** If a capability is missing, degrade gracefully or report the required API version.

@@ -21,6 +21,10 @@ Deps: `@busy-app/cli` (dev, provides `busy-cli`), `@busy-app/busy-lib` (runtime)
 
 Over Wi-Fi: `npm run app:install -- --addr <ip> --password <http-password>`. `app:install` does not build — build first.
 
+The scaffold also ships `AGENTS.md` (rules for coding agents), a `README.md`, and two GitHub Actions workflows:
+- **CI** (`ci.yml`): on push to `main` and PRs — `npm ci`, `npm run typecheck`, `npm run build`, on the Node version from `.nvmrc`.
+- **Release** (`release.yml`): on a tag like `1.2.0` — fails unless the tag equals `version` in `src/appmeta/manifest.json` and `api_version` is set, then builds with `--tgz-name "{id}-{version}.tgz"` and attaches it to a GitHub release (creating it, or adding to one made in the UI). To release: bump `version` in the manifest (and `package.json`), commit, tag the same version, push the tag.
+
 ## Layout
 
 ```
@@ -30,8 +34,8 @@ my-app/
 │   ├── appmeta/
 │   │   ├── manifest.json       required
 │   │   ├── settings.json       optional settings screen
-│   │   ├── icon_front_8x8.png  optional, 8×8 color
-│   │   └── icon_back_11x11.png optional, 11×11 greyscale
+│   │   ├── icon_front_8x8.png  optional, 8×8 color (APPS menu, front)
+│   │   └── icon_back_11x11.png optional, 11×11 greyscale (back screen)
 │   ├── images/   (.png, .image)
 │   ├── animations/ (.anim)
 │   └── sounds/   (.snd)
@@ -59,6 +63,17 @@ Other formats (`.jpg`, `.gif`, `.svg`, `.wav`, `.mp3`) go to `resources/` with a
 - `api_version`: minimum API needed; firmware refuses apps newer than itself. Keep it as low as works.
 - `heap_size_kib`: 1–512, default 128. The **whole** heap. Raise only on "out of memory".
 - `debug: true` hides the app unless developer mode is on.
+
+## App icons
+
+Without icons the APPS menu shows a generic "unknown app" icon — ship both:
+
+| File | Size | Style |
+|---|---|---|
+| `src/appmeta/icon_front_8x8.png` | 8×8 | color, shaded pixel art |
+| `src/appmeta/icon_back_11x11.png` | 11×11 | greyscale line art (back OLED) |
+
+Save as 8-bit RGBA PNG with transparent background, matching the look of the built-in Clock/Weather icons. One recognizable silhouette; at 8×8 there's no room for detail or text. A tiny script (e.g. Python + Pillow, or a hand-written pixel grid) is fine for producing them.
 
 ## Lifecycle — the most important thing to get right
 
@@ -130,6 +145,17 @@ Not available: `fs`, `path`, `process`, `document`, `window`, Node built-ins, DO
 - Color settings may lack alpha: normalize `#RRGGBB` → `#RRGGBBFF` before drawing.
 - Re-read settings on each poll (and on OK) so changes apply without restarting.
 - Secrets typed by the user go in `sensitive` string settings, never in source.
+- The app can **write** its settings back with `Settings.save(values)` (`saveValues()` in `@shared/settings`; it's a no-op when the global is missing). Save the whole document you loaded with the change applied: `saveValues({ ...values, code: "" })`. The HTTP API from inside an app is read-only for settings.
+
+### Sign-in flows through settings
+
+The bar has no keyboard, so third-party logins go through the settings screen (Web UI):
+
+- Credentials (`email`, `password` with `sensitive: true`) in settings; on success store the **access token** in `localStorage` and use it until it expires, then sign in again with the password.
+- **Email / 2FA codes:** add a `sensitive` string field like "Login code (if asked)". When the service demands a code, show `Check email` on screen and poll settings every ~15 s. When a new code appears, use it once, then clear the field with `saveValues({ ...values, code: "" })` so it's ready for the next one. Remember the last used code so a failed one isn't retried.
+- **Rejected password:** remember it and don't retry until the user changes it (compare against the stored value) — repeated failures lock accounts. Show `Bad login` on screen.
+- OK button = retry now / resend a code.
+- Debug-log only the few response fields you rely on, never tokens or passwords.
 
 ## Resource discipline (the bar's CPU/RAM are shared with its web server)
 
@@ -147,6 +173,8 @@ Not available: `fs`, `path`, `process`, `document`, `window`, Node built-ins, DO
 - [ ] No code path leaks a timer after errors or after quit (`stopped` flag checked before rescheduling).
 - [ ] Taps use `short`; holds use `long`/`repeat`.
 - [ ] Diff-drawing with stable ids; removed ids cleared.
+- [ ] Every font used with `textWidth`/`render` appears as a literal `font: "..."` in source.
+- [ ] Both app icons present.
 - [ ] Requests are infrequent with backoff; settings defaults in code.
 - [ ] manifest has real `id`, semver `version`, minimal `api_version`.
 - [ ] Tested on the device: `npm run app:install && npm run app:run`.

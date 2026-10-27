@@ -39,8 +39,11 @@ Mistakes that come up again and again when building for the BUSY Bar. Each entry
 **Unicode arrows/degree signs/emoji in text.**
 → Fonts are ASCII-only. Draw symbols as `xpmbitmap`.
 
-**Back-screen coordinates used on the front** (e.g. `y: 24–28` with `display: "front"`).
-→ Front is 72×16; back is 160×80. Check `display` before choosing coordinates.
+**Back-screen coordinates used on the front** (e.g. `y: 24–28` with `display: "front"`), or a whole layout designed for a guessed screen size like 320×128.
+→ Front is 72×16; back is 160×80. Check `display` and its real size (`SCREEN`, `getDisplayDimensions()` in busy-lib) before choosing coordinates.
+
+**`textWidth()` / `render()` throws "font has no metrics loaded" at runtime** even though the build passed.
+→ busy-cli bundles glyph maps only for fonts that appear as literal `font: "..."` properties in the source. A font name chosen from a variable or setting isn't bundled. Keep every font used as a literal (e.g. `const LARGE = { font: "large" } as const`).
 
 **Priority 100 by default** → stomps on the user's BUSY focus timer (priority 90).
 → Default 50. Go above 90 only for things the user explicitly wants to interrupt focus.
@@ -61,6 +64,12 @@ Mistakes that come up again and again when building for the BUSY Bar. Each entry
 
 **Assuming settings come back flat / always present.**
 → Groups are nested objects; values may be missing. Default everything in code; normalize colors to `#RRGGBBAA`.
+
+**Assuming apps can't change their own settings.**
+→ The `Settings.save()` global can write them (e.g. clear a one-time login code after use). Only the HTTP API is read-only for a running app.
+
+**No app icons** → the APPS menu shows the generic unknown-app icon.
+→ Ship `icon_front_8x8.png` (color) and `icon_back_11x11.png` (greyscale), 8-bit RGBA.
 
 **Retrying a login every 30 s after "bad password"** → risks lockout on third-party accounts.
 → Distinguish auth errors from network errors; auth errors retry slowly (e.g. 10 min) and show the message on screen.

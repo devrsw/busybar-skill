@@ -107,6 +107,41 @@ Rules of thumb for 72×16:
 - ~12 `small` chars or ~9 `normal` chars span the full width. Truncate or marquee long strings.
 - Measure in code with `textWidth(text, font)` — no guessing.
 
+### Font metrics are bundled only for fonts named literally
+
+busy-cli scans the source for literal `font: "..."` properties and bundles glyph maps **only for those fonts**. `DisplayDraw` doesn't care, but `textWidth()`, `measure()` and `render()` **throw at runtime** for a font whose map wasn't bundled. So never build font names dynamically (`font: big ? "large" : "small"` from a variable, `font: cfg.font`, string concatenation). Keep each font as a literal property somewhere in the source:
+
+```ts
+// Literal `font:` properties tell the build which glyph maps to bundle.
+const SMALL = { font: "small" } as const;
+const LARGE = { font: "large" } as const;
+const el = { id: "t", type: "text", text, ...(big ? LARGE : SMALL) } as const;
+```
+
+### Largest font that fits
+
+```ts
+import { textWidth, type DeviceFont } from "@busy-app/busy-lib";
+// Objects with literal `font:` keep every candidate bundled (see above).
+const FONTS: { font: DeviceFont }[] = [{ font: "extra_large" }, { font: "large" }, { font: "normal" }, { font: "small" }];
+
+function fit(text: string, room: number): DeviceFont {
+  for (const { font } of FONTS) if (textWidth(text, font) <= room) return font;
+  return FONTS[FONTS.length - 1].font;
+}
+// room = 72 - (width already used by siblings) - gaps
+```
+
+### Marquee only when it overflows
+
+```ts
+const el = { id: "task", type: "text", text, font: "small", x, y, color } as Record<string, unknown>;
+if (textWidth(text, "small") > room) {
+  Object.assign(el, { width: room, scroll_rate: 1200, scroll_start_delay: 1500, scroll_repeat_delay: 3000 });
+}
+```
+Text that fits stays still and readable; only overflowing text scrolls.
+
 To use the metric helpers outside the busy-cli build (e.g. Node tests), register the maps:
 ```ts
 import * as fonts from "@busy-app/busy-lib/fonts";
@@ -178,4 +213,14 @@ Also guard against overlapping draws: if a draw is in flight, set a `redrawPendi
 - Show staleness: grey the value when data is old, replace with `---` when very old.
 - Use short status messages for error states (`No connection`, `Bad login`, `Set API key`) — the user has no other UI.
 - Symbols (arrows, weather icons, progress) → `xpmbitmap`, not text.
-- Progress bar: background rectangle + foreground rectangle of computed width, both `border_width: 0`.
+- Progress indicators — two recipes:
+  - **Bar** (2 px along the bottom): a translucent track plus a fill on top. Skip the fill element when its width rounds to 0 (and clear it if it was shown).
+    ```ts
+    const w = Math.round((72 * percent) / 100);
+    const els = [{ id: "track", type: "rectangle", x: 0, y: 14, width: 72, height: 2,
+                   fill: "solid", fill_colors: ["#FFFFFF26"], border_width: 0 }];
+    if (w > 0) els.push({ id: "fill", type: "rectangle", x: 0, y: 14, width: w, height: 2,
+                          fill: "solid", fill_colors: [color], border_width: 0, z_index: 1 });
+    ```
+  - **Segmented 1 px line** (e.g. time until the next data update): a single 72×1 `xpmbitmap` built from a string grid (`#` filled, `-` dim, `.` gap between segments). Layout: `column({ width: 72, height: 16, gap: 1 }, [row({ height: 14, ... }, content), line])` — 14 + 1 + 1 = 16.
+  - Advancing either on a coarse tick (e.g. every 5 s) with diff-drawing sends only the one changed element.
