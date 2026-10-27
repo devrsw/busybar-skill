@@ -1,0 +1,11 @@
+{
+  "name": "busybar",
+  "version": "1.0.0",
+  "description": "Skill for building BUSY Bar software: HTTP API, drawing on the 72x16 display, animations, and on-device JavaScript apps.",
+  "author": {
+    "name": "devrsw"
+  },
+  "repository": "https://github.com/devrsw/busybar-skill",
+  "license": "MIT",
+  "keywords": ["busybar", "busy-bar", "led", "display", "skill"]
+}

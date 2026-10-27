@@ -1,0 +1,13 @@
+{
+  "name": "busybar-skill",
+  "owner": {
+    "name": "devrsw"
+  },
+  "plugins": [
+    {
+      "name": "busybar",
+      "source": "./",
+      "description": "Skill for building BUSY Bar software: HTTP API, drawing on the 72x16 display, animations, and on-device JavaScript apps."
+    }
+  ]
+}

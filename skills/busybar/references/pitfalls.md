@@ -1,0 +1,79 @@
+# Common BUSY Bar pitfalls
+
+Mistakes that come up again and again when building for the BUSY Bar. Each entry: what goes wrong → what's actually true.
+
+## API & payloads
+
+**"The firmware doesn't support drawing over HTTP"** — concluded after many payload attempts all return 400.
+→ Wrong conclusion. `POST /api/display/draw` works. A 400 almost always means a required field is missing: every element needs `id`; text needs `font`. Read the 400 body, check the schema in busy-lib's `index.d.ts`, and fix the payload before blaming firmware.
+
+**Invented endpoints** — `/api/display/text`, `/api/display/update`, `/api/display/clear` → 404/405.
+→ They don't exist. Drawing text is a `text` element in `/display/draw`; clearing is `DELETE /display/draw`. Check `http://<bar>/docs`.
+
+**`/busybar/display/draw` → 404 on the device.**
+→ `/busybar/` is the cloud proxy prefix (`https://api.busy.app/busybar`). The device uses `/api/`.
+
+**Auth header `X-Token`.**
+→ It's `X-API-Token` (LAN HTTP password). Cloud uses `Authorization: Bearer`. USB needs nothing.
+
+**`POST /display/brightness` with a JSON body → 400.**
+→ Brightness, volume, input and app actions take **query parameters** (`?value=50`, `?key=ok`, `?app_id=...`).
+
+**Made-up device settings menus** in docs or troubleshooting advice.
+→ Don't document UI paths you haven't seen. The real one: Web UI (http://10.0.4.20 over USB) → Settings → HTTP Access.
+
+## Drawing
+
+**Rectangles drawn with `color`** → white 1 px outlines instead of filled blocks.
+→ Use `fill: "solid"`, `fill_colors: ["#RRGGBBAA"]`, `border_width: 0`.
+
+**`clear_before_draw: true` in the draw payload** → not a firmware field; silently ignored. Stale elements from previous frames stay on screen.
+→ Elements persist by id. Use stable ids and diff-draw; remove disappeared ids with `DELETE /display/draw` + `element_ids`, or `DELETE ?application_name=` before a full redraw. (Some wrapper libraries expose a `clear_before_draw` *option* that does that DELETE first — it's not an API field.)
+
+**Lines stacked 16 px apart** (`y += 16` for each of several lines) → only the first line is visible; the front screen is 16 px tall.
+→ Budget pixels with the font table: one large line, or two small/tiny lines.
+
+**Text clipped at the bottom** (`tiny`/`small` text at `y=13`).
+→ `y` is the line-box top and fonts have descenders; a `small` line needs ~9 rows. Check `y + lineHeight(font) <= 16`. A unit test asserting every element stays inside 72×16 catches this early.
+
+**Unicode arrows/degree signs/emoji in text.**
+→ Fonts are ASCII-only. Draw symbols as `xpmbitmap`.
+
+**Back-screen coordinates used on the front** (e.g. `y: 24–28` with `display: "front"`).
+→ Front is 72×16; back is 160×80. Check `display` before choosing coordinates.
+
+**Priority 100 by default** → stomps on the user's BUSY focus timer (priority 90).
+→ Default 50. Go above 90 only for things the user explicitly wants to interrupt focus.
+
+## JS apps
+
+**Treating `main()` like an Arduino `loop()`** → the app exits immediately or never quits.
+→ The app lives only while a listener/timer/fetch is pending; quit by releasing all of them.
+
+**Unbinding the input listener inside its own callback** → process stops mid-callback.
+→ `setTimeout(unbind, 0)`.
+
+**Handling `press` as a tap** → double actions.
+→ Use `short`.
+
+**Building with Node 26** → busy-cli build breaks.
+→ Node 24 (`.nvmrc`, `engines: ">=24 <26"`, or `npx -p node@24 npm run build`).
+
+**Assuming settings come back flat / always present.**
+→ Groups are nested objects; values may be missing. Default everything in code; normalize colors to `#RRGGBBAA`.
+
+**Retrying a login every 30 s after "bad password"** → risks lockout on third-party accounts.
+→ Distinguish auth errors from network errors; auth errors retry slowly (e.g. 10 min) and show the message on screen.
+
+**Shipping GIF/WAV/JPG assets** → packaged to `resources/`, can't be displayed/played.
+→ PNG/`.image` for images, `.anim` for animations, `.snd` for sounds.
+
+**Calling `/assets/upload` or `/input` from an app** → blocked.
+→ Apps can reach only the whitelisted local endpoints; ship assets inside the package.
+
+## Process
+
+- Verify against the real device early (`curl /api/version`, one test draw) before writing large amounts of code or docs around an assumption.
+- Don't write pages of speculative troubleshooting docs; one correct, tested request beats them.
+- `GET /api/screen?display=0` lets you check what's actually on the front screen without looking at the device.
+- The apps API (`/apps/*`) is USB/LAN only and needs firmware 1.3.1+. The API doesn't tell you which app is running.
