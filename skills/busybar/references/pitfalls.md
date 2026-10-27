@@ -98,6 +98,21 @@ Mistakes that come up again and again when building for the BUSY Bar. Each entry
 **Using a plain 1 s `setInterval` for a seconds display** → it isn't aligned to the second boundary and drifts, so displayed seconds can lag, skip or repeat.
 → Schedule each tick with `setTimeout` to the next second boundary (+~30 ms).
 
+**Settings changes have no effect on the device** — every value stays at its default.
+→ The `Settings` global is missing on some firmware (e.g. 27.14.0), so `loadValues()` returns `null`. Fall back to `device.AppsSettingsGet({ app_id })`, and don't rely on `saveValues()` (a silent no-op there).
+
+**`npm run app:install` fails** (busy-cli 0.6 against firmware 27.14.0: the stage response closes early).
+→ Install with curl: `POST /api/apps/stage` with the `.tgz` as the body, then `POST /api/apps/install?install_key=...` (see js-apps.md), or upload the `.tgz` in the bar's Web UI under Apps → Add app.
+
+**Elements vanish after a notification or another app used the screen, and never come back.**
+→ Diff-drawing only resends changed elements. Resend the whole frame every minute or so (reset the diff cache).
+
+**Song titles, names or lyrics show boxes or nothing.**
+→ Fonts are ASCII. Swap typographic quotes/dashes, strip accents (on a helper/server if you have one) and drop the rest; fall back when nothing is left.
+
+**A double-tap handler also fires the single-tap action.**
+→ Delay the single action by the double-tap window (~400 ms) and cancel it when the second tap arrives.
+
 ## Animation
 
 **"There's no way to make `.anim` files, so animate with timers"** → choppy motion capped at ~3 fps and a draw request per frame.

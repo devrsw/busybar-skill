@@ -33,7 +33,14 @@ Every element in `elements[]`:
 {"id":"t","type":"text","text":"72F","font":"large","color":"#00FFCCFF","x":0,"y":1}
 ```
 - `font` is **required**. `color` default white.
-- Printable ASCII only — the fonts are bitmap ASCII. Anything else renders as fallback boxes or fails.
+- Printable ASCII only — the fonts are bitmap ASCII. Anything else renders as fallback boxes or fails. Sanitize every string that comes from outside (song titles, names, API text) before drawing — keep the original for anything you send back to a service:
+  ```ts
+  const ascii = (text: string) => text
+    .replace(/[‘’]/g, "'").replace(/[“”]/g, '"').replace(/[–—]/g, "-")
+    .replace(/[^\x20-\x7E]/g, "")     // drops everything else, including accented letters and CJK
+    .trim();
+  ```
+  Where you control a helper/server, strip accents there (`é` → `e`, e.g. Python `unicodedata.normalize("NFKD", s)` then drop combining marks) — JerryScript may not have `String.prototype.normalize`. Text that becomes empty after sanitizing (e.g. CJK lyrics) needs a fallback (show the title, or skip the line).
 - `width` + `scroll_rate` (pixels per **minute**), `scroll_start_delay`, `scroll_repeat_delay` (ms) make a marquee when the text is wider than `width`.
 
 ### `rectangle`

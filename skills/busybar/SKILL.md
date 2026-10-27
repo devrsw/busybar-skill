@@ -41,7 +41,7 @@ Both use the same draw payload and the same layout helpers. Read:
 6. **Fonts are ASCII bitmap fonts.** No `→`, `°`, emoji. Draw symbols as `xpmbitmap` elements. In apps, write every font as a literal `font: "..."` in source — busy-cli bundles metrics only for those, and `textWidth()`/`render()` throw for any other.
 7. **Priority 1–100, default 50.** Built-in apps are 10, an active BUSY/CUSTOM work session is 90. Use 50 unless the user wants to interrupt a focus session (91+), and never use 100 by habit.
 8. **The bar is a small embedded device.** Poll on human time scales, keep one draw request in flight, back off on errors, redraw only when something visible changes. A JS app that runs out of heap can **reboot the whole bar** — size `heap_size_kib` for your script plus the responses you parse (256 for larger apps).
-9. **The app runtime is JerryScript, with quirks:** `Number(response.status)` (it may be a string), never pass `body: undefined` to `fetch`, and don't rely on `instanceof` for Error subclasses — see js-apps.md.
+9. **The app runtime is JerryScript, with quirks:** `Number(response.status)` (it may be a string), never pass `body: undefined` to `fetch`, and don't rely on `instanceof` for Error subclasses. The `Settings` global may be missing (firmware 27.14.0): read settings with a fallback to `AppsSettingsGet` — see js-apps.md.
 10. **Never modify BUSY Bar firmware.** If a capability is missing, degrade gracefully or report the required API version.
 
 ## Quick smoke test (USB)
@@ -56,7 +56,7 @@ curl -X POST http://10.0.4.20/api/display/draw -H 'Content-Type: application/jso
 curl -X DELETE 'http://10.0.4.20/api/display/draw?application_name=test'
 ```
 
-Over Wi-Fi add `-H 'X-API-Token: <HTTP access password>'` and use the bar's LAN IP.
+Over Wi-Fi use the bar's `.local` name (e.g. `http://kitchenbar.local`, found via Bonjour — see http-api.md → "Finding the bar") and add `-H 'X-API-Token: <HTTP access password>'` if a password is set.
 
 ## Workflow for a new BUSY Bar feature
 

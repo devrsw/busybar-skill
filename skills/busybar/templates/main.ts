@@ -106,7 +106,10 @@ function main(): void {
     polling = true;
     let next = POLL_MS;
     try {
-      const values = (await loadValues()) ?? {};
+      // The Settings global is missing on some firmware: fall back to the HTTP API.
+      let values = await loadValues();
+      if (!values) values = await device.AppsSettingsGet({ app_id: APP }).then((doc) => doc.values).catch(() => null);
+      values = values ?? {};
       const url = typeof values.url === "string" ? values.url.trim() : "";
       if (!url) {
         data = null;

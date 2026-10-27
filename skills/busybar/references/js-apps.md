@@ -21,6 +21,16 @@ Deps: `@busy-app/cli` (dev, provides `busy-cli`), `@busy-app/busy-lib` (runtime)
 
 Over Wi-Fi: `npm run app:install -- --addr <ip> --password <http-password>`. `app:install` does not build — build first.
 
+**Other ways to install** (also what to tell end users, who shouldn't need Node):
+- **Web UI:** open `http://<bar>.local` (or `http://10.0.4.20` over USB) → **Apps** → **Add app** → **Select file** → the `.tgz`. Updating = uploading the new `.tgz` (or Apps → the app → Update app).
+- **curl** (scripts/installers) — the same two calls busy-cli makes:
+  ```bash
+  KEY=$(curl -sf -X POST "http://$BAR/api/apps/stage" --data-binary @dist/my.app.tgz | python3 -c 'import sys,json;print(json.load(sys.stdin)["install_key"])')
+  curl -sf -X POST "http://$BAR/api/apps/install?install_key=$KEY"
+  curl -sf -X POST "http://$BAR/api/apps/launch?app_id=my.app"
+  ```
+  Add `-H "X-API-Token: $PW"` over Wi-Fi with a password. **busy-cli 0.6 `app:install` failed against firmware 27.14.0** (the stage response closed early) while this curl sequence worked — use it as the fallback.
+
 The scaffold also ships `AGENTS.md` (rules for coding agents), a `README.md`, and two GitHub Actions workflows:
 - **CI** (`ci.yml`): on push to `main` and PRs — `npm ci`, `npm run typecheck`, `npm run build`, on the Node version from `.nvmrc`.
 - **Release** (`release.yml`): on a tag like `1.2.0` — fails unless the tag equals `version` in `src/appmeta/manifest.json` and `api_version` is set, then builds with `--tgz-name "{id}-{version}.tgz"` and attaches it to a GitHub release (creating it, or adding to one made in the UI). To release: bump `version` in the manifest (and `package.json`), commit, tag the same version, push the tag.
@@ -59,7 +69,7 @@ Other formats (`.jpg`, `.gif`, `.svg`, `.wav`, `.mp3`) go to `resources/` with a
 }
 ```
 
-- `id`: ≤ 32 chars, `[A-Za-z0-9_.-]`, not starting with `.`. Replace the template's `app.example`. Choose it once: **changing the id makes the bar treat it as a different app** — settings must be re-entered and the old install lingers until uninstalled. Reverse-DNS (`com.yourdomain.app`) avoids collisions; a generic `app.<name>` keeps personal names out of packages and release assets. Same goes for `author` (optional) if the app will be shared publicly.
+- `id`: ≤ 32 chars, `[A-Za-z0-9_.-]`, not starting with `.`. Replace the template's `app.example`. Choose it once: **changing the id makes the bar treat it as a different app** — settings must be re-entered and the old install lingers until uninstalled. Reverse-DNS avoids collisions: `com.yourdomain.app`, or without a domain `io.github.<github-user>.<app>` (a namespace you control that isn't your personal name). A bare `app.<name>` is short but may collide with someone else's app. Same goes for `author` (optional) if the app will be shared publicly.
 - `api_version`: minimum API needed; firmware refuses apps newer than itself. Keep it as low as works.
 - `heap_size_kib`: 1–512, default 128. The **whole** heap — it holds your script *and* every response you parse. Running out of heap doesn't just throw: on firmware 1.3.1 it **rebooted the whole bar**. Rough guide: a small app (≲ 20 KB built `main.js`, small responses) is fine at 128; a ~50 KB script parsing multi-KB JSON responses needed **256**. Check `dist/` script size after building, and raise the heap before shipping if you're near that range, rather than waiting for a crash.
 - `debug: true` hides the app unless developer mode is on.
@@ -106,12 +116,14 @@ const unbind = listen("input", (event) => {
 
 - Buttons: `ok`, `start`, `back` with `press | release | short | long | repeat`. Encoder: `action` `clockwise | counterclockwise`, `delta` ±1.
 - **Use `short` for taps, not `press`.** `press` fires on key-down and is followed by `short`, so handling `press` double-fires and reacts before the gesture is complete. `long`/`repeat` for holds; `press`/`release` only for games.
+- **OK is the knob click** — pressing the encoder sends `ok`. Label it "knob click" in docs and on-screen hints.
+- **Double-tap**: on the first `short`, start a ~400 ms timer and act only if no second `short` arrives; a second one cancels the timer and does the double-tap action. The single tap is delayed by that window, so use double-tap only on a button whose single action can wait (and say so in the README).
 - A useful control scheme: **START** = primary toggle (start/pause), **hold START** (`long`) = the stronger variant (stop / start new), **OK** = refresh now, **knob** = browse a list (`list()` from busy-lib) with OK/START to choose and BACK to cancel, **BACK** = quit (or cancel when a picker is open). Close a picker automatically after ~15 s without input.
 - Make button actions **feel instant**: update the screen immediately, then do the network call (see "Optimistic actions" below).
 
 ## Runtime APIs
 
-Available: `console`, `fetch` (+ `Request`, `Response`, `Headers`, `URL`), `setTimeout/setInterval`, `localStorage`, `Date`, `JSON`, standard ECMAScript, global `Settings` (`load()`, `save()`).
+Available: `console`, `fetch` (+ `Request`, `Response`, `Headers`, `URL`), `setTimeout/setInterval`, `localStorage`, `Date`, `JSON`, standard ECMAScript, and on some firmware a global `Settings` (`load()`, `save()`) — feature-detect it (see Settings).
 
 Not available: `fs`, `path`, `process`, `document`, `window`, Node built-ins, DOM. Third-party npm packages must run without those.
 
@@ -154,6 +166,16 @@ async function request(method: string, url: string, body?: unknown): Promise<unk
 }
 ```
 
+### Companion helper on a computer
+
+When the data or control lives somewhere the bar can't reach (a desktop app like a music player, local files, OS APIs), run a small HTTP helper on the computer and have the bar app poll it:
+
+- **Helper:** standard-library only (e.g. Python `http.server`), a few JSON endpoints (`GET /now`, `POST /playpause` …), installed as a login item (macOS `launchd` LaunchAgent) by one `install.sh` that also installs/launches the bar app. Expect macOS privacy prompts (Automation to control apps, Local Network to reach the bar) and document them.
+- **Auth:** the installer generates a random key, stores it in the helper's config and writes it into the app's settings (`PUT /api/apps/settings`); the app sends it as a header (e.g. `X-Helper-Key`) and the helper refuses requests without it. Without a key, accept only the USB subnet (`10.0.4.x`) and localhost.
+- **Addresses:** the computer's address *as seen from the bar* is what matters — get it with a UDP socket "connected" towards the bar (`getsockname()`); over USB it's typically `10.0.4.21`. Write **every** address the bar can reach the helper on (Wi-Fi first, then USB) into the app's settings and keep them current (re-check every minute). The app tries each in order and moves on when one stops answering.
+- **App side:** poll every few seconds while the helper answers; when it doesn't, try each address once, then back off (5 s → 1 min) and show a sensible standalone screen (e.g. just a clock) meanwhile.
+- **Releases:** attach both the bar `.tgz` and a zip with the helper and `install.sh`, so users need neither Node nor a checkout.
+
 ### Primary and fallback data sources
 
 When two services can supply the same data, don't make the user pick one in settings. Use the primary when it's configured, and fall back to the secondary when the primary isn't set up, errors, rejects the login (then leave the primary alone for a while, e.g. 10 min), returns no data, or returns stale data. Optional extras (fields only one service has) come from whichever service is configured.
@@ -194,19 +216,28 @@ For apps that *control* a remote service (start/stop a timer, toggle something):
 
 - Types: `boolean`, `integer` (32-bit; `step` must divide `max-min`), `string` (≤255 bytes, `max_length` default 64, `sensitive` masks it), `enum` (≤32 options), `color` (`#RRGGBB[AA]`), `time` (`HH:MM[:SS]`), `geolocation` (`auto`/`fixed` with lat/lon), `group` (nest ≤ 4 levels).
 - `color` and `geolocation` can't be edited on the device itself — only Web UI/API.
-- Read values with the `Settings` global (`@shared/settings` `loadValues()` wrapper; it may return `{values}` or the values directly) and fall back to `device.AppsSettingsGet({ app_id })`. Groups arrive as **nested objects**; accept flat ids too.
+- **The `Settings` global isn't on every firmware** (it was missing on 27.14.0, where the template's `loadValues()` just returns `null` and every setting silently stays at its default). Always fall back to the HTTP API:
+  ```ts
+  async function settings(): Promise<SettingsValues | null> {
+    const local = await loadValues();                       // Settings global, when present
+    if (local) return local;
+    try { return (await device.AppsSettingsGet({ app_id: APP })).values; } catch { return null; }
+  }
+  ```
+  Groups arrive as **nested objects**; accept flat ids too. Test that a changed setting actually takes effect on the target firmware.
 - **Always default in code** — values can be missing, `null`, or wrong-typed. Validate (`typeof v === "number" && isFinite(v)`).
 - Color settings may lack alpha: normalize `#RRGGBB` → `#RRGGBBFF` before drawing.
 - Re-read settings on each poll (and on OK) so changes apply without restarting.
 - Secrets typed by the user go in `sensitive` string settings, never in source.
-- The app can **write** its settings back with `Settings.save(values)` (`saveValues()` in `@shared/settings`; it's a no-op when the global is missing). Save the whole document you loaded with the change applied: `saveValues({ ...values, code: "" })`. The HTTP API from inside an app is read-only for settings.
+- Where the `Settings` global exists, the app can **write** its settings back with `Settings.save(values)` (`saveValues()` in `@shared/settings`). Save the whole document you loaded with the change applied: `saveValues({ ...values, code: "" })`. Without the global it's a silent no-op, and the HTTP API from inside an app is read-only for settings — so don't make correctness depend on writing settings; design for "can't clear the field" (e.g. remember the last value you consumed).
+- **External tools can write an app's settings**: `GET /api/apps/settings?app_id=X`, change `values`, `PUT` the whole document back (USB/LAN, not cloud). Use this from an installer or companion program to configure the app (addresses, keys) so the user never types them on the bar.
 
 ### Sign-in flows through settings
 
 The bar has no keyboard, so third-party logins go through the settings screen (Web UI):
 
 - Credentials (`email`, `password` with `sensitive: true`) in settings; on success store the **access token** in `localStorage` and use it until it expires, then sign in again with the password.
-- **Email / 2FA codes:** add a `sensitive` string field like "Login code (if asked)". When the service demands a code, show `Check email` on screen and poll settings every ~15 s. When a new code appears, use it once, then clear the field with `saveValues({ ...values, code: "" })` so it's ready for the next one. Remember the last used code so a failed one isn't retried.
+- **Email / 2FA codes:** add a `sensitive` string field like "Login code (if asked)". When the service demands a code, show `Check email` on screen and poll settings every ~15 s. When a new code appears, use it once, then try to clear the field with `saveValues({ ...values, code: "" })` so it's ready for the next one. Always remember the last used code too, so a used or failed code isn't retried even where clearing doesn't work.
 - **Rejected password:** remember it and don't retry until the user changes it (compare against the stored value) — repeated failures lock accounts. Show `Bad login` on screen.
 - OK button = retry now / resend a code.
 - Debug-log only the few response fields you rely on, never tokens or passwords.
@@ -215,6 +246,8 @@ The bar has no keyboard, so third-party logins go through the settings screen (W
 
 - Poll remote data on human time scales (minutes). Align to when new data is expected (e.g. a source that updates every 5 min: poll ~20 s after the next update is due, not on a blind fixed interval).
 - One draw request in flight; coalesce updates with a `redrawPending` flag.
+- **Resend the whole frame occasionally** (e.g. once a minute, by clearing the diff cache `shown = new Map()`): another app or a notification taking the screen can drop your elements, and diff-drawing alone would never put unchanged ones back.
+- Between polls, advance predictable values locally (a track position, a countdown) and redraw only when the visible result changes (e.g. the progress bar gains a pixel).
 - Bounded exponential backoff on failures (e.g. 30 s → 5 min). Auth failures: retry rarely (10 min) to avoid account lockouts, and show the problem on screen.
 - Coarse timers: redraw "minutes ago" once a minute, not every second.
 - Parse only fields you need; no unbounded arrays/caches; no logging in per-frame paths.

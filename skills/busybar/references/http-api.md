@@ -15,6 +15,18 @@ Source of truth: the device's own docs at `http://<bar>/docs`, the public refere
 - The header is `X-API-Token` (not `X-Token`). Missing/wrong → 401/403.
 - The apps API (`/apps/*`) does **not** work through the cloud proxy.
 
+## Finding the bar
+
+- **USB:** always `10.0.4.20`. The computer's side of the USB link is typically `10.0.4.21` — that's the address a bar app uses to reach a helper on that computer.
+- **Wi-Fi, by name:** each bar announces itself with Bonjour/mDNS as an HTTP service `busybar-<id>._http._tcp`, with its display name in the TXT record (`name=...`), and a `.local` host name that survives DHCP changes — usually the bar's name lowercased without spaces or punctuation (`Kitchen Bar` → `http://kitchenbar.local`). Prefer the `.local` name over a hard-coded IP.
+  ```bash
+  dns-sd -B _http._tcp local.                          # list; bars show as busybar-<id> (macOS)
+  dns-sd -L busybar-<id> _http._tcp local.             # host, port and TXT (name=...)
+  curl http://kitchenbar.local/api/name                # confirm which bar answers
+  ```
+  Use `avahi-browse -rt _http._tcp` on Linux, or a zeroconf library. Resolve IPv4 only (`getaddrinfo(..., AF_INET)`) — waiting on IPv6 can take seconds. A bar on both Wi-Fi and USB answers on both; prefer Wi-Fi, since it keeps working when the cable comes out.
+- When several bars are found, pick by name (ask the user, or accept a `--name` substring) and remember the choice.
+
 ## Clients
 
 - **TypeScript**: `@busy-app/busy-lib` → `new BusyBar({ addr, HTTPAccessPassword?, token?, timeout? })`. Default `addr` is `10.0.4.20`; default timeout 3000 ms. Methods are PascalCase per namespace: `DisplayDraw`, `DisplayClear`, `DisplayBrightnessSet`, `AudioPlay`, `AssetsUpload`, `AppsList`, `AppsSettingsGet`, `InputSend`, `SystemStatusGet`, `SystemVersionGet`, `ScreenFrameGet`, … Errors carry `status`, `statusText`, `body`; timeouts are `DOMException` `TimeoutError`.

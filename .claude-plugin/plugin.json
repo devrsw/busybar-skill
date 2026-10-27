@@ -1,6 +1,6 @@
 {
   "name": "busybar",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "description": "Skill for building BUSY Bar software: HTTP API, drawing on the 72x16 display, animations, and on-device JavaScript apps.",
   "author": {
     "name": "devrsw"
