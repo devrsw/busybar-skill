@@ -118,8 +118,28 @@ const unbind = listen("input", (event) => {
 - **Use `short` for taps, not `press`.** `press` fires on key-down and is followed by `short`, so handling `press` double-fires and reacts before the gesture is complete. `long`/`repeat` for holds; `press`/`release` only for games.
 - **OK is the knob click** — pressing the encoder sends `ok`. Label it "knob click" in docs and on-screen hints.
 - **Double-tap**: on the first `short`, start a ~400 ms timer and act only if no second `short` arrives; a second one cancels the timer and does the double-tap action. The single tap is delayed by that window, so use double-tap only on a button whose single action can wait (and say so in the README).
-- A useful control scheme: **START** = primary toggle (start/pause), **hold START** (`long`) = the stronger variant (stop / start new), **OK** = refresh now, **knob** = browse a list (`list()` from busy-lib) with OK/START to choose and BACK to cancel, **BACK** = quit (or cancel when a picker is open). Close a picker automatically after ~15 s without input.
+- A useful control scheme: **START** = primary toggle (start/pause), **hold START** (timed hold, see below) = the stronger variant (stop / start new), **OK** = refresh now, **knob** = browse a list (`list()` from busy-lib) with OK/START to choose and BACK to cancel, **BACK** = quit (or cancel when a picker is open). Close a picker automatically after ~15 s without input.
 - Make button actions **feel instant**: update the screen immediately, then do the network call (see "Optimistic actions" below).
+- **Time holds yourself.** The firmware's `long` needs a longer hold than feels natural. For a press-vs-hold button, record the time on `press` and decide on `release` (≥ ~600 ms = hold). Treat a `short` that arrived without a `press` before it as a press — input injected through `POST /api/input` only sends `short`.
+  ```ts
+  let pressedAt = 0;
+  if (event.key === "ok" || event.key === "start") {
+    if (event.action === "press") pressedAt = Date.now();
+    else if (event.action === "release" && pressedAt) {
+      const held = Date.now() - pressedAt;
+      pressedAt = 0;
+      return held >= 600 ? hold() : tap();
+    } else if (event.action === "short" && !pressedAt) return tap();   // e.g. from /api/input
+    return;
+  }
+  ```
+- **Knob direction:** read it from `event.action` (`clockwise` / `counterclockwise`).
+- **Confirm destructive actions** (end a game, discard data) with a second press: show `End? OK to confirm` and cancel the prompt automatically after ~4 s.
+- **Knob-switched views:** turning the knob steps through views; show the view's name with page dots along the bottom row for ~1.2 s (a toast), then the view itself. Skip views that need data or settings the user doesn't have, and fetch a view's extra data as soon as it's turned into.
+
+### Remembering on-device choices
+
+Apps can't reliably write their settings (see Settings), so a choice made with the knob (a view, units) goes in `localStorage` **together with the setting value it overrode**: `{ value: "imperial", base: "metric" }`. When applying it, use the stored choice only while the setting still equals `base` — if the user later changes the setting in the Web UI, the new setting wins. Remove the entry when the choice equals the setting. Save once the knob has been still for ~3 s, not on every click (each write rewrites flash).
 
 ## Runtime APIs
 
@@ -173,8 +193,16 @@ When the data or control lives somewhere the bar can't reach (a desktop app like
 - **Helper:** standard-library only (e.g. Python `http.server`), a few JSON endpoints (`GET /now`, `POST /playpause` …), installed as a login item (macOS `launchd` LaunchAgent) by one `install.sh` that also installs/launches the bar app. Expect macOS privacy prompts (Automation to control apps, Local Network to reach the bar) and document them.
 - **Auth:** the installer generates a random key, stores it in the helper's config and writes it into the app's settings (`PUT /api/apps/settings`); the app sends it as a header (e.g. `X-Helper-Key`) and the helper refuses requests without it. Without a key, accept only the USB subnet (`10.0.4.x`) and localhost.
 - **Addresses:** the computer's address *as seen from the bar* is what matters — get it with a UDP socket "connected" towards the bar (`getsockname()`); over USB it's typically `10.0.4.21`. Write **every** address the bar can reach the helper on (Wi-Fi first, then USB) into the app's settings and keep them current (re-check every minute). The app tries each in order and moves on when one stops answering.
-- **App side:** poll every few seconds while the helper answers; when it doesn't, try each address once, then back off (5 s → 1 min) and show a sensible standalone screen (e.g. just a clock) meanwhile.
+- **App side:** poll every few seconds while the helper answers; when it doesn't, try each address once, then back off (5 s → 1 min) and show a sensible standalone screen (e.g. just a clock) meanwhile. Show "offline" only after a few (e.g. 3) consecutive failures, not on one dropped request.
+- **Simpler setup:** a single "Helper URL" string setting (`http://<mac-ip>:8787/status`) plus an optional token setting works too; then tell users to give the computer a DHCP reservation so the URL stays valid. The helper can be any language — a compiled Swift binary is a good fit for macOS APIs (e.g. Core Audio reports which processes use the microphone, macOS 14.2+).
 - **Releases:** attach both the bar `.tgz` and a zip with the helper and `install.sh`, so users need neither Node nor a checkout.
+
+macOS installer gotchas:
+- **Login items can't read `~/Downloads`, `~/Desktop` or `~/Documents`** (privacy protection), which is exactly where users unzip releases. Copy the helper to `~/Library/Application Support/<app>/` and run it from there; log to `~/Library/Logs/<app>.log`.
+- **`PlistBuddy` prints "File Doesn't Exist, Will Create" on stdout** when reading a missing file/key. Only use its output when it exits successfully (`v=$(PlistBuddy -c "Print :Key" f 2>/dev/null) && echo "$v"`), or a first install reads that message as a saved value.
+- Under `set -e`, a failing command at the end of an `a && b` chain can stop the script — end such lines with `|| true` where failure is fine.
+- **Verify the whole path** at the end of install: check the helper is listening (show its log if not), then wait for the bar's first request to arrive; if it never does, point the user at the macOS firewall (allow incoming connections for the helper) or the network.
+- `POST /api/apps/launch` can be refused while something else holds the screen (e.g. an active BUSY session) — report that instead of failing silently.
 
 ### Primary and fallback data sources
 
@@ -227,7 +255,8 @@ For apps that *control* a remote service (start/stop a timer, toggle something):
   Groups arrive as **nested objects**; accept flat ids too. Test that a changed setting actually takes effect on the target firmware.
 - **Always default in code** — values can be missing, `null`, or wrong-typed. Validate (`typeof v === "number" && isFinite(v)`).
 - Color settings may lack alpha: normalize `#RRGGBB` → `#RRGGBBFF` before drawing.
-- Re-read settings on each poll (and on OK) so changes apply without restarting.
+- Re-read settings on each poll (and on OK) so changes apply without restarting — or, for apps without polling, at natural points (e.g. each time the user returns to a menu).
+- **Lists in a string setting**: there's no list type, so take comma-separated values in a `string` field (e.g. players, game names). Split on commas, trim, drop empties, cap the count, and remember the 255-byte limit — set `max_length` high enough and say "comma-separated, up to N" in the label or README.
 - Secrets typed by the user go in `sensitive` string settings, never in source.
 - Where the `Settings` global exists, the app can **write** its settings back with `Settings.save(values)` (`saveValues()` in `@shared/settings`). Save the whole document you loaded with the change applied: `saveValues({ ...values, code: "" })`. Without the global it's a silent no-op, and the HTTP API from inside an app is read-only for settings — so don't make correctness depend on writing settings; design for "can't clear the field" (e.g. remember the last value you consumed).
 - **External tools can write an app's settings**: `GET /api/apps/settings?app_id=X`, change `values`, `PUT` the whole document back (USB/LAN, not cloud). Use this from an installer or companion program to configure the app (addresses, keys) so the user never types them on the bar.

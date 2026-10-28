@@ -125,6 +125,10 @@ Ideas that read well at 72×16: 1-px "nudge" of a trend arrow in its direction, 
 - Slide: animate `dx` on a container node over a few frames, then settle.
 - Keep transitions under ~1 s and don't run them for every data update — only on meaningful state changes (e.g. entering an alarm state).
 
+### Random pick with a slowing flicker
+
+For "pick one at random" (a game, a first player), flick through random entries with growing delays (e.g. 60, 70, 90, 120, 160, 220, 300 ms) via chained `setTimeout`s, never repeating the previous entry, and land on the result — reads like a slot machine and costs one small text element per step.
+
 ### Counting a number to its new value
 
 When a displayed value changes, count from the old value to the new one instead of jumping. Scale the duration to the size of the jump (at ~3 visible frames/s, 0.9 s ≈ 3 steps, 1.5 s ≈ 5, 2.2 s ≈ 7), skip it for tiny changes, ease in and out so the steps spread evenly, and flash the color toward white on big jumps:

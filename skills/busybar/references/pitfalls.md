@@ -110,6 +110,18 @@ Mistakes that come up again and again when building for the BUSY Bar. Each entry
 **Song titles, names or lyrics show boxes or nothing.**
 → Fonts are ASCII. Swap typographic quotes/dashes, strip accents (on a helper/server if you have one) and drop the rest; fall back when nothing is left.
 
+**Holds feel unresponsive** — the firmware's `long` needs a longer hold than people expect.
+→ Time `press` → `release` yourself (~600 ms threshold), and treat a `short` with no preceding `press` (from `/api/input`) as a tap.
+
+**A macOS helper installed as a login item never starts** (or can't read its files) when the user unzipped it in Downloads/Desktop/Documents.
+→ Copy it to `~/Library/Application Support/<app>/` and run it from there.
+
+**A shell installer misreads saved values on the first install** — `PlistBuddy` printed "File Doesn't Exist, Will Create" to stdout.
+→ Use its output only when it exits 0.
+
+**The installer finishes but the bar never reaches the helper.**
+→ Check end to end: the helper is listening, then the bar's first request arrives; otherwise suspect the macOS firewall or the network.
+
 **A double-tap handler also fires the single-tap action.**
 → Delay the single action by the double-tap window (~400 ms) and cancel it when the second tap arrives.
 

@@ -169,6 +169,39 @@ registerFontMaps({ fonts: Object.assign({}, ...Object.values(fonts).map((f: any)
 ```
 (busy-cli's Vite plugin bundles them automatically for apps.)
 
+### Truncating and word-wrapping
+
+Marquees are fine for one line, but for titles it's often better to truncate or wrap by measured width:
+
+```ts
+/** Cuts text to fit `room`, ending in "..." when shortened. */
+function fit(text: string, room: number, font: { font: DeviceFont }): string {
+  if (textWidth(text, font.font) <= room) return text;
+  let cut = text;
+  while (cut.length > 1 && textWidth(`${cut}...`, font.font) > room) cut = cut.slice(0, -1);
+  return `${cut.trimEnd()}...`;
+}
+
+/** Word-wraps into at most `max` lines; the last ends in "..." if text is left over. */
+function wrap(text: string, room: number, font: { font: DeviceFont }, max: number): string[] {
+  const lines: string[] = [];
+  let current = "";
+  const words = text.split(/\s+/).filter((w) => w);
+  for (let i = 0; i < words.length; i++) {
+    const next = current ? `${current} ${words[i]}` : words[i];
+    if (!current || textWidth(next, font.font) <= room) { current = next; continue; }
+    // The last allowed line takes everything left, cut to fit.
+    if (lines.length === max - 1) { current = [current, ...words.slice(i)].join(" "); break; }
+    lines.push(fit(current, room, font));      // fit() also catches a single over-long word
+    current = words[i];
+  }
+  if (current) lines.push(fit(current, room, font));
+  return lines;
+}
+```
+
+A front-screen pattern that fits a lot: put a short label (an identifier like `ENG-123`, or an icon) at the start of the first line, let the title flow beside it, and continue on the second line at full width — marquee only the second line when it still doesn't fit. Use `wrap` for the back screen (≤ 145 px wide, 3–4 lines of `small`).
+
 ## Layout engine (busy-lib)
 
 Don't hand-place coordinates for anything non-trivial. Build a tree and let `render()` compute `x/y`:
@@ -233,6 +266,9 @@ Also guard against overlapping draws: if a draw is in flight, set a `redrawPendi
 - Use short status messages for error states (`No connection`, `Bad login`, `Set API key`) — the user has no other UI.
 - **Use the back screen for details.** The front gets the one glanceable fact; the 160×80 greyscale back can hold description, project, totals, the last error, and a control cheat-sheet (`OK refresh  BACK quit`). Set `display: "back"` on those elements (or `render(tree, { display: "back", width: 160, height: 80 })`). Keep back-screen text within ~145 px: the firmware draws status icons along the right edge. Make it a setting (some users never look at the back).
 - **Small status markers** — a 1–2 px dot in a corner (e.g. amber = changes waiting to sync, red = sync failing) says a lot without stealing space; explain it on the back screen.
+- **Double-size icons**: `scaleGrid(grid, 2)` turns a 7×7 state icon into a 14×14 one that fills the height — good next to two lines of small text.
+- **Charts**: a whole chart can be one `xpmbitmap`. For a recent-history chart: fit the vertical scale to the data plus thresholds (± a margin) so small swings show; draw dim dotted lines (every other pixel) at thresholds; one 2×2 dot per sample in its status color; the current value in a large font beside it. Up to 32 palette colors per bitmap.
+- **Page dots**: when switching views, a 1 px row of 4 px dots (2 px apart, current one bright) along the bottom row shows where you are.
 - **Transient feedback**: after a button action, flash a short word (`Started`, `Paused`) for ~1.5 s via a timer, plus a one-off `led_notification_color` (green/amber/red), then return to the normal frame.
 - Symbols (arrows, weather icons, progress) → `xpmbitmap`, not text.
 - Progress indicators — two recipes:
